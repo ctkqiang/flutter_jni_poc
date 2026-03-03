@@ -1,6 +1,7 @@
 package xin.ctkqiang.flutter_jni_poc
 
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -15,8 +16,11 @@ import java.util.Random
 
 class MainActivity : AppCompatActivity() {
 
+    private val TAG = "JNI_VULNERABILITY_TEST"
+
     init {
         System.loadLibrary("native_lib")
+        Log.d(TAG, "Native library loaded")
     }
 
     external fun nativeDestroy(shellHolder: Long)
@@ -24,6 +28,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var tvStats: TextView
     private lateinit var tvLog: TextView
+    private lateinit var tvLogcat: TextView
     private lateinit var btnNormal: Button
     private lateinit var btnEvil: Button
     private lateinit var btnRandom: Button
@@ -34,19 +39,19 @@ class MainActivity : AppCompatActivity() {
     private var failureCount = 0
     private val random = Random()
     private var memoryTestRunning = false
+    private var logcatReader: Thread? = null
+    private var logcatRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // 设置标题
         title = "JNI 漏洞测试工具"
+        Log.d(TAG, "Activity created")
         
-        // 创建原生 UI 布局
         val layout = LinearLayout(this)
         layout.orientation = LinearLayout.VERTICAL
         layout.setPadding(32, 32, 32, 32)
         
-        // 处理窗口 insets，确保内容不会被系统 UI 遮挡
         ViewCompat.setOnApplyWindowInsetsListener(layout) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             v.setPadding(
@@ -58,14 +63,12 @@ class MainActivity : AppCompatActivity() {
             insets
         }
         
-        // 状态显示
         tvStatus = TextView(this)
         tvStatus.text = "JNI 漏洞测试工具\n待机状态"
         tvStatus.textSize = 18f
         tvStatus.setPadding(0, 0, 0, 24)
         layout.addView(tvStatus)
         
-        // 操作统计
         tvStats = TextView(this)
         tvStats.text = "操作数: 0 | 成功: 0 | 失败: 0"
         tvStats.textSize = 14f
@@ -73,7 +76,6 @@ class MainActivity : AppCompatActivity() {
         tvStats.setPadding(0, 0, 0, 24)
         layout.addView(tvStats)
         
-        // 日志显示
         tvLog = TextView(this)
         tvLog.text = "日志: 待机状态"
         tvLog.textSize = 12f
@@ -83,12 +85,10 @@ class MainActivity : AppCompatActivity() {
         tvLog.maxLines = 5
         layout.addView(tvLog)
         
-        // 按钮布局
         val buttonLayout = LinearLayout(this)
         buttonLayout.orientation = LinearLayout.VERTICAL
         buttonLayout.setPadding(0, 0, 0, 16)
         
-        // 有效指针按钮
         btnNormal = Button(this)
         btnNormal.text = "有效指针"
         btnNormal.setBackgroundColor(resources.getColor(android.R.color.holo_blue_light))
@@ -101,7 +101,6 @@ class MainActivity : AppCompatActivity() {
         btnNormal.setMargin(0, 0, 0, 12)
         buttonLayout.addView(btnNormal)
         
-        // 伪造指针按钮
         btnEvil = Button(this)
         btnEvil.text = "伪造指针"
         btnEvil.setBackgroundColor(resources.getColor(android.R.color.holo_red_light))
@@ -114,7 +113,6 @@ class MainActivity : AppCompatActivity() {
         btnEvil.setMargin(0, 0, 0, 12)
         buttonLayout.addView(btnEvil)
         
-        // 随机指针按钮
         btnRandom = Button(this)
         btnRandom.text = "随机指针"
         btnRandom.setBackgroundColor(resources.getColor(android.R.color.holo_orange_light))
@@ -127,7 +125,6 @@ class MainActivity : AppCompatActivity() {
         btnRandom.setMargin(0, 0, 0, 12)
         buttonLayout.addView(btnRandom)
         
-        // 序列测试按钮
         btnSequence = Button(this)
         btnSequence.text = "序列测试"
         btnSequence.setBackgroundColor(resources.getColor(android.R.color.holo_green_light))
@@ -140,7 +137,6 @@ class MainActivity : AppCompatActivity() {
         btnSequence.setMargin(0, 0, 0, 12)
         buttonLayout.addView(btnSequence)
         
-        // 内存测试按钮
         btnMemoryTest = Button(this)
         btnMemoryTest.text = "内存测试"
         btnMemoryTest.setBackgroundColor(resources.getColor(android.R.color.holo_purple))
@@ -154,10 +150,18 @@ class MainActivity : AppCompatActivity() {
         
         layout.addView(buttonLayout)
         
-        // 设置布局
+        // Logcat 显示
+        tvLogcat = TextView(this)
+        tvLogcat.text = "Logcat 日志："
+        tvLogcat.textSize = 12f
+        tvLogcat.setTextColor(resources.getColor(android.R.color.black))
+        tvLogcat.setPadding(0, 0, 0, 24)
+        tvLogcat.setSingleLine(false)
+        tvLogcat.maxLines = 20
+        layout.addView(tvLogcat)
+        
         setContentView(layout)
         
-        // 设置按钮点击事件
         btnNormal.setOnClickListener {
             executeNormalCall()
             updateStats(tvStats)
@@ -168,27 +172,27 @@ class MainActivity : AppCompatActivity() {
             updateStats(tvStats)
         }
         
-        // 为伪造按钮添加长按自动执行功能（永不自动停止）
         var longPressHandler: android.os.Handler? = null
         val longPressRunnable = object : Runnable {
             override fun run() {
                 executeEvilCall()
                 updateStats(tvStats)
-                longPressHandler?.postDelayed(this, 200) // 每200毫秒执行一次
+                longPressHandler?.postDelayed(this, 200)
             }
         }
         
         btnEvil.setOnLongClickListener {
             longPressHandler = android.os.Handler()
             longPressHandler?.post(longPressRunnable)
+            Log.d(TAG, "Long press started for evil button")
             true
         }
         
-        // 监听触摸事件，当手指抬起时停止自动执行
         btnEvil.setOnTouchListener {
             v, event ->
             if (event.action == android.view.MotionEvent.ACTION_UP || event.action == android.view.MotionEvent.ACTION_CANCEL) {
                 longPressHandler?.removeCallbacks(longPressRunnable)
+                Log.d(TAG, "Long press stopped for evil button")
             }
             false
         }
@@ -218,6 +222,7 @@ class MainActivity : AppCompatActivity() {
         
         tvStatus.text = "执行中：有效指针 $validPtr"
         updateLog("测试有效指针: $validPtr")
+        Log.d(TAG, "Testing valid pointer: $validPtr")
         
         try {
             nativeDestroy(validPtr)
@@ -225,12 +230,14 @@ class MainActivity : AppCompatActivity() {
             operationCount++
             successCount++
             updateLog("有效指针测试成功: $validPtr")
+            Log.d(TAG, "Valid pointer test succeeded: $validPtr")
             Toast.makeText(this, "操作成功", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             tvStatus.text = "失败：${e.message}"
             operationCount++
             failureCount++
             updateLog("有效指针测试失败: $validPtr, 错误: ${e.message}")
+            Log.e(TAG, "Valid pointer test failed: $validPtr, error: ${e.message}", e)
             Toast.makeText(this, "操作失败", Toast.LENGTH_SHORT).show()
         }
     }
@@ -240,6 +247,7 @@ class MainActivity : AppCompatActivity() {
         
         tvStatus.text = "执行中：伪造指针 $fakePtr"
         updateLog("测试伪造指针: $fakePtr")
+        Log.d(TAG, "Testing fake pointer: $fakePtr")
         
         try {
             nativeDestroy(fakePtr)
@@ -247,12 +255,14 @@ class MainActivity : AppCompatActivity() {
             operationCount++
             successCount++
             updateLog("伪造指针测试成功: $fakePtr")
+            Log.d(TAG, "Fake pointer test succeeded: $fakePtr")
             Toast.makeText(this, "操作成功", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             tvStatus.text = "失败：${e.message}"
             operationCount++
             failureCount++
             updateLog("伪造指针测试失败: $fakePtr, 错误: ${e.message}")
+            Log.e(TAG, "Fake pointer test failed: $fakePtr, error: ${e.message}", e)
             Toast.makeText(this, "操作失败", Toast.LENGTH_SHORT).show()
         }
     }
@@ -262,6 +272,7 @@ class MainActivity : AppCompatActivity() {
         
         tvStatus.text = "执行中：随机指针 $randomPtr"
         updateLog("测试随机指针: $randomPtr")
+        Log.d(TAG, "Testing random pointer: $randomPtr")
         
         try {
             nativeDestroy(randomPtr)
@@ -269,12 +280,14 @@ class MainActivity : AppCompatActivity() {
             operationCount++
             successCount++
             updateLog("随机指针测试成功: $randomPtr")
+            Log.d(TAG, "Random pointer test succeeded: $randomPtr")
             Toast.makeText(this, "操作成功", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             tvStatus.text = "失败：${e.message}"
             operationCount++
             failureCount++
             updateLog("随机指针测试失败: $randomPtr, 错误: ${e.message}")
+            Log.e(TAG, "Random pointer test failed: $randomPtr, error: ${e.message}", e)
             Toast.makeText(this, "操作失败", Toast.LENGTH_SHORT).show()
         }
     }
@@ -282,22 +295,24 @@ class MainActivity : AppCompatActivity() {
     private fun executeSequenceCall() {
         tvStatus.text = "执行中：序列测试开始"
         updateLog("序列测试开始，共测试 ${7}个指针")
+        Log.d(TAG, "Sequence test started, testing 7 pointers")
         
         Thread {
             val testValues = listOf(
-                0L, // 空指针
-                1L, // 最小指针
-                0xFFFFFFFFL, // 最大32位指针
-                0x7FFFFFFFFFFFFFFFL, // 最大64位指针
-                random.nextLong(), // 随机指针
-                random.nextLong(), // 另一个随机指针
-                random.nextLong() // 第三个随机指针
+                0L,
+                1L,
+                0xFFFFFFFFL,
+                0x7FFFFFFFFFFFFFFFL,
+                random.nextLong(),
+                random.nextLong(),
+                random.nextLong()
             )
             
             for (ptr in testValues) {
                 runOnUiThread {
                     tvStatus.text = "执行中：测试指针 $ptr"
                     updateLog("测试指针: $ptr")
+                    Log.d(TAG, "Testing pointer: $ptr")
                 }
                 
                 try {
@@ -305,12 +320,14 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread {
                         updateLog("指针测试成功: $ptr")
                         successCount++
+                        Log.d(TAG, "Pointer test succeeded: $ptr")
                     }
                     Thread.sleep(500)
                 } catch (e: Exception) {
                     runOnUiThread {
                         updateLog("指针测试失败: $ptr, 错误: ${e.message}")
                         failureCount++
+                        Log.e(TAG, "Pointer test failed: $ptr, error: ${e.message}", e)
                     }
                     Thread.sleep(500)
                 }
@@ -321,6 +338,7 @@ class MainActivity : AppCompatActivity() {
                 operationCount += testValues.size
                 updateStats(tvStats)
                 updateLog("序列测试完成，共测试 ${testValues.size}个指针")
+                Log.d(TAG, "Sequence test completed, tested ${testValues.size} pointers")
                 Toast.makeText(this, "序列测试完成", Toast.LENGTH_SHORT).show()
             }
         }.start()
@@ -330,6 +348,7 @@ class MainActivity : AppCompatActivity() {
         memoryTestRunning = true
         tvStatus.text = "执行中：内存测试开始"
         updateLog("内存测试开始，持续执行直到达到最大内存")
+        Log.d(TAG, "Memory test started, running until max memory")
         
         Thread {
             while (memoryTestRunning) {
@@ -338,6 +357,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     tvStatus.text = "执行中：内存测试 $fakePtr"
                     updateLog("内存测试指针: $fakePtr")
+                    Log.d(TAG, "Memory test pointer: $fakePtr")
                 }
                 
                 try {
@@ -347,6 +367,7 @@ class MainActivity : AppCompatActivity() {
                         successCount++
                         updateStats(tvStats)
                         updateLog("内存测试成功: $fakePtr")
+                        Log.d(TAG, "Memory test succeeded: $fakePtr")
                     }
                 } catch (e: Exception) {
                     runOnUiThread {
@@ -354,16 +375,17 @@ class MainActivity : AppCompatActivity() {
                         failureCount++
                         updateStats(tvStats)
                         updateLog("内存测试失败: $fakePtr, 错误: ${e.message}")
+                        Log.e(TAG, "Memory test failed: $fakePtr, error: ${e.message}", e)
                     }
                 }
                 
-                // 短暂休眠，避免过于频繁的操作
                 Thread.sleep(50)
             }
             
             runOnUiThread {
                 tvStatus.text = "内存测试已停止"
                 updateLog("内存测试已停止")
+                Log.d(TAG, "Memory test stopped")
                 Toast.makeText(this, "内存测试已停止", Toast.LENGTH_SHORT).show()
             }
         }.start()
@@ -373,15 +395,18 @@ class MainActivity : AppCompatActivity() {
         memoryTestRunning = false
         tvStatus.text = "停止中：内存测试"
         updateLog("正在停止内存测试...")
+        Log.d(TAG, "Stopping memory test...")
     }
     
     private fun updateStats(tvStats: TextView) {
         tvStats.text = "操作数: $operationCount | 成功: $successCount | 失败: $failureCount"
+        Log.d(TAG, "Stats updated: operations=$operationCount, success=$successCount, failure=$failureCount")
     }
     
     private fun updateLog(message: String) {
         val memoryInfo = getMemoryInfo()
         tvLog.text = "日志: $message\n内存: $memoryInfo"
+        Log.d(TAG, "Log updated: $message, memory: $memoryInfo")
     }
     
     private fun getMemoryInfo(): String {
@@ -398,6 +423,7 @@ class MainActivity : AppCompatActivity() {
         tvStatus.text = "JNI 漏洞测试工具\n待机状态"
         updateStats(tvStats)
         updateLog("统计已重置")
+        Log.d(TAG, "Stats reset")
         Toast.makeText(this, "统计已重置", Toast.LENGTH_SHORT).show()
     }
     
@@ -414,6 +440,57 @@ class MainActivity : AppCompatActivity() {
             }
             else -> super.onOptionsItemSelected(item)
         }
+    }
+    
+    private fun startLogcatReader() {
+        logcatRunning = true
+        logcatReader = Thread {
+            try {
+                val process = Runtime.getRuntime().exec("logcat -v time JNI_VULNERABILITY_TEST:* *:S")
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(process.inputStream))
+                var line: String? = null
+                
+                while (logcatRunning) {
+                    line = reader.readLine()
+                    if (line == null) break
+                    
+                    val logLine = line
+                    runOnUiThread {
+                        val currentText = tvLogcat.text.toString()
+                        val newText = if (currentText.length > 1000) {
+                            logLine + "\n"
+                        } else {
+                            currentText + logLine + "\n"
+                        }
+                        tvLogcat.text = newText
+                    }
+                }
+                
+                reader.close()
+                process.destroy()
+            } catch (e: Exception) {
+                Log.e(TAG, "Logcat reader error: ${e.message}", e)
+            }
+        }
+        logcatReader?.start()
+        Log.d(TAG, "Logcat reader started")
+    }
+    
+    private fun stopLogcatReader() {
+        logcatRunning = false
+        logcatReader?.interrupt()
+        logcatReader = null
+        Log.d(TAG, "Logcat reader stopped")
+    }
+    
+    override fun onStart() {
+        super.onStart()
+        startLogcatReader()
+    }
+    
+    override fun onStop() {
+        super.onStop()
+        stopLogcatReader()
     }
     
     private fun View.setMargin(left: Int, top: Int, right: Int, bottom: Int) {
