@@ -1,6 +1,7 @@
 package xin.ctkqiang.flutter_jni_poc
 
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.LinearLayout
@@ -29,6 +30,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // 设置标题
+        title = "JNI 漏洞测试工具"
         
         // 创建原生 UI 布局
         val layout = LinearLayout(this)
@@ -231,9 +235,35 @@ class MainActivity : AppCompatActivity() {
         tvStats.text = "操作数: $operationCount | 成功: $successCount | 失败: $failureCount"
     }
     
+    private fun resetStats() {
+        operationCount = 0
+        successCount = 0
+        failureCount = 0
+        tvStatus.text = "JNI 漏洞测试工具\n待机状态"
+        updateStats(tvStats)
+        Toast.makeText(this, "统计已重置", Toast.LENGTH_SHORT).show()
+    }
+    
+    override fun onCreateOptionsMenu(menu: android.view.Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        return true
+    }
+    
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_reset -> {
+                resetStats()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+    
     private fun View.setMargin(left: Int, top: Int, right: Int, bottom: Int) {
-        val params = layoutParams as LinearLayout.LayoutParams
-        params.setMargins(left, top, right, bottom)
-        layoutParams = params
+        if (layoutParams is LinearLayout.LayoutParams) {
+            val params = layoutParams as LinearLayout.LayoutParams
+            params.setMargins(left, top, right, bottom)
+            this.layoutParams = params
+        }
     }
 }
