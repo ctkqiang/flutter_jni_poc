@@ -2,11 +2,15 @@ package xin.ctkqiang.flutter_jni_poc
 
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import java.util.Random
 
 class MainActivity : AppCompatActivity() {
@@ -19,6 +23,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var tvStatus: TextView
     private lateinit var tvStats: TextView
+    private lateinit var tvLog: TextView
     private lateinit var btnNormal: Button
     private lateinit var btnEvil: Button
     private lateinit var btnRandom: Button
@@ -39,6 +44,18 @@ class MainActivity : AppCompatActivity() {
         layout.orientation = LinearLayout.VERTICAL
         layout.setPadding(32, 32, 32, 32)
         
+        // 处理窗口 insets，确保内容不会被系统 UI 遮挡
+        ViewCompat.setOnApplyWindowInsetsListener(layout) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(
+                v.paddingLeft + systemBars.left,
+                v.paddingTop + systemBars.top,
+                v.paddingRight + systemBars.right,
+                v.paddingBottom + systemBars.bottom
+            )
+            insets
+        }
+        
         // 状态显示
         tvStatus = TextView(this)
         tvStatus.text = "JNI 漏洞测试工具\n待机状态"
@@ -53,6 +70,16 @@ class MainActivity : AppCompatActivity() {
         tvStats.setTextColor(resources.getColor(android.R.color.darker_gray))
         tvStats.setPadding(0, 0, 0, 24)
         layout.addView(tvStats)
+        
+        // 日志显示
+        tvLog = TextView(this)
+        tvLog.text = "日志: 待机状态"
+        tvLog.textSize = 12f
+        tvLog.setTextColor(resources.getColor(android.R.color.darker_gray))
+        tvLog.setPadding(0, 0, 0, 24)
+        tvLog.setSingleLine(false)
+        tvLog.maxLines = 5
+        layout.addView(tvLog)
         
         // 按钮布局
         val buttonLayout = LinearLayout(this)
@@ -142,17 +169,20 @@ class MainActivity : AppCompatActivity() {
         val validPtr = holder.getPointer()
         
         tvStatus.text = "执行中：有效指针 $validPtr"
+        updateLog("测试有效指针: $validPtr")
         
         try {
             nativeDestroy(validPtr)
             tvStatus.text = "成功：有效指针已处理"
             operationCount++
             successCount++
+            updateLog("有效指针测试成功: $validPtr")
             Toast.makeText(this, "操作成功", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             tvStatus.text = "失败：${e.message}"
             operationCount++
             failureCount++
+            updateLog("有效指针测试失败: $validPtr, 错误: ${e.message}")
             Toast.makeText(this, "操作失败", Toast.LENGTH_SHORT).show()
         }
     }
@@ -161,17 +191,20 @@ class MainActivity : AppCompatActivity() {
         val fakePtr = 0x12345678L
         
         tvStatus.text = "执行中：伪造指针 $fakePtr"
+        updateLog("测试伪造指针: $fakePtr")
         
         try {
             nativeDestroy(fakePtr)
             tvStatus.text = "成功：伪造指针已处理"
             operationCount++
             successCount++
+            updateLog("伪造指针测试成功: $fakePtr")
             Toast.makeText(this, "操作成功", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             tvStatus.text = "失败：${e.message}"
             operationCount++
             failureCount++
+            updateLog("伪造指针测试失败: $fakePtr, 错误: ${e.message}")
             Toast.makeText(this, "操作失败", Toast.LENGTH_SHORT).show()
         }
     }
@@ -180,23 +213,27 @@ class MainActivity : AppCompatActivity() {
         val randomPtr = random.nextLong()
         
         tvStatus.text = "执行中：随机指针 $randomPtr"
+        updateLog("测试随机指针: $randomPtr")
         
         try {
             nativeDestroy(randomPtr)
             tvStatus.text = "成功：随机指针已处理"
             operationCount++
             successCount++
+            updateLog("随机指针测试成功: $randomPtr")
             Toast.makeText(this, "操作成功", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             tvStatus.text = "失败：${e.message}"
             operationCount++
             failureCount++
+            updateLog("随机指针测试失败: $randomPtr, 错误: ${e.message}")
             Toast.makeText(this, "操作失败", Toast.LENGTH_SHORT).show()
         }
     }
     
     private fun executeSequenceCall() {
         tvStatus.text = "执行中：序列测试开始"
+        updateLog("序列测试开始，共测试 ${7}个指针")
         
         Thread {
             val testValues = listOf(
@@ -212,12 +249,21 @@ class MainActivity : AppCompatActivity() {
             for (ptr in testValues) {
                 runOnUiThread {
                     tvStatus.text = "执行中：测试指针 $ptr"
+                    updateLog("测试指针: $ptr")
                 }
                 
                 try {
                     nativeDestroy(ptr)
+                    runOnUiThread {
+                        updateLog("指针测试成功: $ptr")
+                        successCount++
+                    }
                     Thread.sleep(500)
                 } catch (e: Exception) {
+                    runOnUiThread {
+                        updateLog("指针测试失败: $ptr, 错误: ${e.message}")
+                        failureCount++
+                    }
                     Thread.sleep(500)
                 }
             }
@@ -225,8 +271,9 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 tvStatus.text = "序列测试完成"
                 operationCount += testValues.size
-                Toast.makeText(this, "序列测试完成", Toast.LENGTH_SHORT).show()
                 updateStats(tvStats)
+                updateLog("序列测试完成，共测试 ${testValues.size}个指针")
+                Toast.makeText(this, "序列测试完成", Toast.LENGTH_SHORT).show()
             }
         }.start()
     }
@@ -235,12 +282,25 @@ class MainActivity : AppCompatActivity() {
         tvStats.text = "操作数: $operationCount | 成功: $successCount | 失败: $failureCount"
     }
     
+    private fun updateLog(message: String) {
+        val memoryInfo = getMemoryInfo()
+        tvLog.text = "日志: $message\n内存: $memoryInfo"
+    }
+    
+    private fun getMemoryInfo(): String {
+        val runtime = Runtime.getRuntime()
+        val usedMemInMB = (runtime.totalMemory() - runtime.freeMemory()) / 1048576L
+        val maxMemInMB = runtime.maxMemory() / 1048576L
+        return "使用: ${usedMemInMB}MB / 最大: ${maxMemInMB}MB"
+    }
+    
     private fun resetStats() {
         operationCount = 0
         successCount = 0
         failureCount = 0
         tvStatus.text = "JNI 漏洞测试工具\n待机状态"
         updateStats(tvStats)
+        updateLog("统计已重置")
         Toast.makeText(this, "统计已重置", Toast.LENGTH_SHORT).show()
     }
     
