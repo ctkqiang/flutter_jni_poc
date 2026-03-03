@@ -28,10 +28,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnEvil: Button
     private lateinit var btnRandom: Button
     private lateinit var btnSequence: Button
+    private lateinit var btnMemoryTest: Button
     private var operationCount = 0
     private var successCount = 0
     private var failureCount = 0
     private val random = Random()
+    private var memoryTestRunning = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -135,7 +137,20 @@ class MainActivity : AppCompatActivity() {
             LinearLayout.LayoutParams.WRAP_CONTENT
         )
         btnSequence.setPadding(0, 16, 0, 16)
+        btnSequence.setMargin(0, 0, 0, 12)
         buttonLayout.addView(btnSequence)
+        
+        // 内存测试按钮
+        btnMemoryTest = Button(this)
+        btnMemoryTest.text = "内存测试"
+        btnMemoryTest.setBackgroundColor(resources.getColor(android.R.color.holo_purple))
+        btnMemoryTest.setTextColor(resources.getColor(android.R.color.white))
+        btnMemoryTest.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        btnMemoryTest.setPadding(0, 16, 0, 16)
+        buttonLayout.addView(btnMemoryTest)
         
         layout.addView(buttonLayout)
         
@@ -153,6 +168,31 @@ class MainActivity : AppCompatActivity() {
             updateStats(tvStats)
         }
         
+        // 为伪造按钮添加长按自动执行功能（永不自动停止）
+        var longPressHandler: android.os.Handler? = null
+        val longPressRunnable = object : Runnable {
+            override fun run() {
+                executeEvilCall()
+                updateStats(tvStats)
+                longPressHandler?.postDelayed(this, 200) // 每200毫秒执行一次
+            }
+        }
+        
+        btnEvil.setOnLongClickListener {
+            longPressHandler = android.os.Handler()
+            longPressHandler?.post(longPressRunnable)
+            true
+        }
+        
+        // 监听触摸事件，当手指抬起时停止自动执行
+        btnEvil.setOnTouchListener {
+            v, event ->
+            if (event.action == android.view.MotionEvent.ACTION_UP || event.action == android.view.MotionEvent.ACTION_CANCEL) {
+                longPressHandler?.removeCallbacks(longPressRunnable)
+            }
+            false
+        }
+        
         btnRandom.setOnClickListener {
             executeRandomCall()
             updateStats(tvStats)
@@ -161,6 +201,14 @@ class MainActivity : AppCompatActivity() {
         btnSequence.setOnClickListener {
             executeSequenceCall()
             updateStats(tvStats)
+        }
+        
+        btnMemoryTest.setOnClickListener {
+            if (!memoryTestRunning) {
+                executeMemoryTest()
+            } else {
+                stopMemoryTest()
+            }
         }
     }
     
@@ -276,6 +324,55 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "序列测试完成", Toast.LENGTH_SHORT).show()
             }
         }.start()
+    }
+    
+    private fun executeMemoryTest() {
+        memoryTestRunning = true
+        tvStatus.text = "执行中：内存测试开始"
+        updateLog("内存测试开始，持续执行直到达到最大内存")
+        
+        Thread {
+            while (memoryTestRunning) {
+                val fakePtr = random.nextLong()
+                
+                runOnUiThread {
+                    tvStatus.text = "执行中：内存测试 $fakePtr"
+                    updateLog("内存测试指针: $fakePtr")
+                }
+                
+                try {
+                    nativeDestroy(fakePtr)
+                    runOnUiThread {
+                        operationCount++
+                        successCount++
+                        updateStats(tvStats)
+                        updateLog("内存测试成功: $fakePtr")
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread {
+                        operationCount++
+                        failureCount++
+                        updateStats(tvStats)
+                        updateLog("内存测试失败: $fakePtr, 错误: ${e.message}")
+                    }
+                }
+                
+                // 短暂休眠，避免过于频繁的操作
+                Thread.sleep(50)
+            }
+            
+            runOnUiThread {
+                tvStatus.text = "内存测试已停止"
+                updateLog("内存测试已停止")
+                Toast.makeText(this, "内存测试已停止", Toast.LENGTH_SHORT).show()
+            }
+        }.start()
+    }
+    
+    private fun stopMemoryTest() {
+        memoryTestRunning = false
+        tvStatus.text = "停止中：内存测试"
+        updateLog("正在停止内存测试...")
     }
     
     private fun updateStats(tvStats: TextView) {
